@@ -1,45 +1,55 @@
 /**
  * Ketchup Capture — Background Service Worker
  *
- * Manages recording state and coordinates message passing
- * between the popup UI and the content script injected into the active tab.
+ * Orchestrates multi-tab session recording.
+ * Maintains the master `masterEvents` array and auto-injects the content script
+ * into new pages whenever a recording session is active.
  */
 
-// Recording state
-let recordingState = {
+// Master Session State
+let masterSession = {
   isRecording: false,
-  tabId: null,
   startTime: null,
+  startUrl: null,
+  events: [],       // The combined rrweb stream
+  activeTabs: new Set(),
 };
 
-// Listen for messages from popup
+// ─── Message Handling ───
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.type) {
+    case "GET_STATE":
+      // Let the popup know we are capturing, how long, and how many events we hold
+      sendResponse({ 
+        isRecording: masterSession.isRecording, 
+        startTime: masterSession.startTime,
+        eventCount: masterSession.events.length
+      });
+      return false;
+
+    case "CHECK_RECORDING_STATUS":
+      // A new page loaded and its content script wants to know if it should record
+      if (masterSession.isRecording && sender.tab) {
+        masterSession.activeTabs.add(sender.tab.id);
+        sendResponse({ isRecording: true });
+      } else {
+        sendResponse({ isRecording: false });
+      }
+      return false;
+
     case "START_RECORDING":
       handleStartRecording(message.tabId).then(sendResponse);
-      return true; // async response
+      return true; // async
 
     case "STOP_RECORDING":
       handleStopRecording().then(sendResponse);
-      return true;
+      return true; // async
 
-    case "GET_STATE":
-      sendResponse({ ...recordingState });
-      return false;
-
-    case "EVENTS_CAPTURED":
-      // Content script finished collecting — relay to popup
-      chrome.runtime.sendMessage({
-        type: "EVENTS_READY",
-        events: message.events,
-        metadata: {
-          url: message.url,
-          title: message.title,
-          duration: Date.now() - (recordingState.startTime || Date.now()),
-        },
-      });
-      recordingState = { isRecording: false, tabId: null, startTime: null };
-      sendResponse({ ok: true });
+    case "STREAM_EVENTS_CHUNK":
+      // Append the streamed 1s chunk to the master array
+      if (masterSession.isRecording) {
+        masterSession.events.push(...message.events);
+      }
       return false;
 
     default:
@@ -47,55 +57,100 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-/**
- * Inject content script and start rrweb recording in the active tab.
- */
+// ─── Auto-Injection on Navigation ───
+// If the user clicks a link and ruins the current DOM context, we inject again!
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (masterSession.isRecording && changeInfo.status === "complete") {
+    // Inject the recorder into the newly loaded page
+    // Note: Chrome restricts script injection on some URLs (chrome://, chrome-extension://)
+    if (tab.url && !tab.url.startsWith("chrome://")) {
+      try {
+         await chrome.scripting.executeScript({
+          target: { tabId },
+          files: ["dist/content.bundle.js"],
+        });
+        masterSession.activeTabs.add(tabId);
+      } catch (e) {
+        console.warn("[Ketchup Capture] Could not auto-inject into tab", tabId, e.message);
+      }
+    }
+  }
+});
+
+// Clean up dead tabs
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (masterSession.activeTabs.has(tabId)) {
+    masterSession.activeTabs.delete(tabId);
+  }
+});
+
+// ─── Core Logic ───
+
 async function handleStartRecording(tabId) {
   try {
-    // Inject the bundled content script (rrweb + recorder logic)
+    masterSession = {
+      isRecording: true,
+      startTime: Date.now(),
+      startUrl: null,
+      events: [],
+      activeTabs: new Set([tabId]),
+    };
+
+    // Note: The active tab handles its own injection via popup.js or the onUpdated hook will catch it.
+    // We just manually inject the VERY FIRST initialization
     await chrome.scripting.executeScript({
       target: { tabId },
       files: ["dist/content.bundle.js"],
     });
 
-    // Tell the content script to start
     await chrome.tabs.sendMessage(tabId, { type: "START" });
 
-    recordingState = {
-      isRecording: true,
-      tabId,
-      startTime: Date.now(),
-    };
-
-    // Update the extension icon badge
+    // UX
     await chrome.action.setBadgeText({ text: "REC" });
     await chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
 
     return { ok: true };
   } catch (err) {
-    console.error("[Ketchup] Failed to start recording:", err);
+    console.error("[Ketchup Background] Failed to start:", err);
+    masterSession.isRecording = false; // abort
     return { ok: false, error: err.message };
   }
 }
 
-/**
- * Signal the content script to stop recording and collect events.
- */
 async function handleStopRecording() {
   try {
-    if (!recordingState.tabId) {
+    if (!masterSession.isRecording) {
       return { ok: false, error: "No active recording" };
     }
 
-    // Tell content script to stop and send events back
-    await chrome.tabs.sendMessage(recordingState.tabId, { type: "STOP" });
+    // Tell all currently active tabs to stop buffering immediately
+    masterSession.activeTabs.forEach((tabId) => {
+      chrome.tabs.sendMessage(tabId, { type: "STOP" }).catch(() => {});
+    });
 
-    // Clear the badge
+    // Wait a brief moment for the final `STREAM_EVENTS_CHUNK` to arrive from content scripts
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    const finalPayload = {
+      events: masterSession.events,
+      duration: Date.now() - masterSession.startTime,
+    };
+
+    // Clean up
+    masterSession.isRecording = false;
+    masterSession.activeTabs.clear();
     await chrome.action.setBadgeText({ text: "" });
+
+    // Send the massive assembled payload back to the Popup so it can upload it to Ketchup API
+    chrome.runtime.sendMessage({
+      type: "EVENTS_READY",
+      events: finalPayload.events,
+      metadata: { duration: finalPayload.duration, url: masterSession.startUrl || "multi-page-journey" },
+    });
 
     return { ok: true };
   } catch (err) {
-    console.error("[Ketchup] Failed to stop recording:", err);
+    masterSession.isRecording = false;
     return { ok: false, error: err.message };
   }
 }

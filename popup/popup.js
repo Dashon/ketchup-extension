@@ -8,8 +8,14 @@
  */
 
 // ─── Configuration ───
-const KETCHUP_API_BASE = "https://ketchup-webapp.vercel.app"; // TODO: env-based config
+const API_BASE = {
+  local: "http://localhost:3000",
+  production: "https://ketchup-webapp.vercel.app",
+};
 const CAPTURES_ENDPOINT = "/api/captures";
+
+// Auth State cache
+let currentAuth = null;
 
 // ─── DOM References ───
 const states = {
@@ -42,15 +48,36 @@ function showState(stateName) {
 
 // ─── Initialize ───
 document.addEventListener("DOMContentLoaded", async () => {
-  // Check if we're currently recording (popup may have been closed and reopened)
+  // 1. Check if we have synced Ketchup credentials
+  currentAuth = await getAuthCredentials();
+  
+  if (!currentAuth) {
+    // If no credentials, we literally can't upload. Force them to sync.
+    btnStart.disabled = true;
+    btnStart.style.opacity = "0.3";
+    btnStart.title = "Please click 'Start Manual Capture' in your Ketchup Workspace to sync credentials.";
+    showError("Workspace not connected. Go to your Ketchup Dashboard, open a Project, and click 'Start Manual Capture' to link this extension.");
+    return;
+  }
+
+  // 2. Check if we're currently recording (popup reopened mid-session)
   const response = await chrome.runtime.sendMessage({ type: "GET_STATE" });
   if (response?.isRecording) {
     showState("recording");
     recordingStartTime = response.startTime;
     startTimer();
     updateRecordingUrl();
+    eventCountEl.textContent = response.eventCount || 0;
   }
 });
+
+function getAuthCredentials() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["ketchupAuth"], (result) => {
+      resolve(result.ketchupAuth || null);
+    });
+  });
+}
 
 // ─── Start Recording ───
 btnStart.addEventListener("click", async () => {
@@ -108,11 +135,16 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 /**
- * Handle the captured events — upload to Ketchup API.
+ * Handle the assembled events — upload to Ketchup API using synced credentials.
  */
 async function handleEventsReady(events, metadata) {
   try {
+    if (!currentAuth) {
+      throw new Error("Missing Ketchup Auth credentials. Cannot upload.");
+    }
+
     const payload = {
+      projectId: currentAuth.projectId,
       events,
       metadata: {
         ...metadata,
@@ -122,30 +154,31 @@ async function handleEventsReady(events, metadata) {
       },
     };
 
-    // ── Upload to Ketchup API ──
-    // For now, log to console. When the API endpoint is live, uncomment the fetch.
-    console.log("[Ketchup Capture] 📦 Payload ready:", {
-      eventCount: events.length,
-      durationMs: metadata.duration,
-      url: metadata.url,
-      payloadSizeKb: Math.round(JSON.stringify(payload).length / 1024),
-    });
-    console.log("[Ketchup Capture] 📋 Full payload (paste into API test):", JSON.stringify(payload));
+    const baseUrl = API_BASE[currentAuth.environment] || API_BASE.production;
+    const url = `${baseUrl}${CAPTURES_ENDPOINT}`;
 
-    /*
-    const res = await fetch(`${KETCHUP_API_BASE}${CAPTURES_ENDPOINT}`, {
+    console.log(`[Ketchup Capture] 🚀 Uploading ${events.length} events to ${url}...`);
+
+    const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${currentAuth.token}` 
+      },
       body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
-      throw new Error(`API returned ${res.status}: ${await res.text()}`);
+      const errorText = await res.text();
+      console.error("[Ketchup Capture] Upload failed:", res.status, errorText);
+      throw new Error(`Upload Failed (${res.status}): ${errorText.substring(0, 50)}...`);
     }
 
     const data = await res.json();
-    btnView.href = `${KETCHUP_API_BASE}/catchup/${data.projectId}/captures`;
-    */
+    console.log("[Ketchup Capture] ✅ Upload success:", data);
+
+    // Link directly to the capture in the registry
+    btnView.href = `${baseUrl}/catchup/${currentAuth.projectId}/captures`;
 
     // Show success
     const durationSec = Math.round(metadata.duration / 1000);

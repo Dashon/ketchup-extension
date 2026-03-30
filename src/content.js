@@ -1,22 +1,19 @@
 /**
- * Ketchup Capture — Content Script
+ * Ketchup Capture — Content Script (Streaming Architecture)
  *
- * Injected into the active tab by the background service worker.
- * Uses rrweb to record all DOM mutations, user interactions,
- * mouse movements, and scroll events as structured JSON events.
- *
- * This file is bundled by esbuild (scripts/build.js) into dist/content.bundle.js
- * so that rrweb is included inline.
+ * Injected into any active tab while tracking is enabled.
+ * Uses rrweb to record all DOM mutations, buffering them into small 1-second
+ * chunks and streaming them to the background service worker to prevent
+ * data loss if the user navigates away or closes the tab.
  */
 
 import { record } from "rrweb";
 
 let stopFn = null;
-let events = [];
+let eventBuffer = [];
+let streamInterval = null;
 
-/**
- * Listen for START/STOP commands from the background service worker.
- */
+// Listen for START/STOP commands
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "START") {
     startRecording();
@@ -32,54 +29,75 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 /**
- * Initialize rrweb recording.
- *
- * rrweb.record() sets up MutationObservers and event listeners on the page.
- * Every DOM change, click, scroll, input, etc. is captured as a typed event
- * object with a timestamp. These events can later be replayed pixel-perfectly.
+ * Identify if we missed the start signal due to a fresh page load.
+ * We ping the background worker to see if a recording is currently active.
  */
+chrome.runtime.sendMessage({ type: "CHECK_RECORDING_STATUS" }, (response) => {
+  if (response && response.isRecording) {
+    console.log("[Ketchup Capture] 🔄 Re-attaching recorder to new page context...");
+    startRecording();
+  }
+});
+
 function startRecording() {
-  events = []; // Reset buffer
+  if (stopFn) return; // Already recording in this context
+
+  eventBuffer = [];
 
   stopFn = record({
     emit(event) {
-      events.push(event);
+      eventBuffer.push(event);
     },
-    // Capture options
-    checkoutEveryNms: 10000,       // Full DOM snapshot every 10s for safety
-    blockClass: "ketchup-ignore",  // CSS class to exclude sensitive elements
-    maskAllInputs: false,          // Don't mask — we need the real UI state
-    recordCanvas: true,            // Capture canvas elements (charts, etc.)
-    recordCrossOriginIframes: false, // Skip cross-origin iframes
+    checkoutEveryNms: 10000,       // Full DOM snapshot every 10s
+    blockClass: "ketchup-ignore",
+    maskAllInputs: false,
+    recordCanvas: true,
+    recordCrossOriginIframes: false,
     sampling: {
-      mousemove: 50,    // Sample mouse position every 50ms
+      mousemove: 50,
       mouseInteraction: true,
-      scroll: 150,      // Sample scroll events every 150ms
-      input: "last",    // Only capture the final input value
+      scroll: 150,
+      input: "last",
     },
   });
 
-  console.log("[Ketchup Capture] 🔴 Recording started — DOM mutations are being captured.");
+  // Flush buffer to background worker every 1 second
+  streamInterval = setInterval(flushBuffer, 1000);
+
+  console.log("[Ketchup Capture] 🔴 Recording started — Streaming DOM mutations.");
 }
 
-/**
- * Stop recording, collect events, and send them back to the extension.
- */
 function stopRecording() {
   if (stopFn) {
-    stopFn(); // rrweb cleanup — removes observers and listeners
+    stopFn();
     stopFn = null;
   }
 
-  console.log(`[Ketchup Capture] ⏹ Recording stopped — ${events.length} events captured.`);
+  if (streamInterval) {
+    clearInterval(streamInterval);
+    streamInterval = null;
+  }
 
-  // Send the event payload back to the background service worker
+  // Flush any remaining events one last time
+  flushBuffer(true);
+  console.log(`[Ketchup Capture] ⏹ Recording stopped gracefully on this tab.`);
+}
+
+/**
+ * Sends the current buffer to the background service worker.
+ */
+function flushBuffer(isFinal = false) {
+  if (eventBuffer.length === 0 && !isFinal) return;
+
+  const payload = [...eventBuffer];
+  eventBuffer = []; // Reset local buffer eagerly
+
   chrome.runtime.sendMessage({
-    type: "EVENTS_CAPTURED",
-    events: events,
+    type: "STREAM_EVENTS_CHUNK",
+    events: payload,
     url: window.location.href,
     title: document.title,
+    isFinal,
   });
-
-  events = []; // Clear buffer
 }
+

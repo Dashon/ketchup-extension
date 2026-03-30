@@ -24,7 +24,16 @@
   "background": {
     "service_worker": "src/background.js"
   },
-  "content_scripts": [],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:3000/*",
+        "https://ketchup-webapp.vercel.app/*"
+      ],
+      "js": ["src/auth-bridge.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "web_accessible_resources": [
     {
       "resources": ["lib/rrweb.min.js"],
