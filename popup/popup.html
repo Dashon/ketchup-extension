@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=340">
+  <title>Ketchup Capture</title>
+  <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- ═══ State: IDLE ═══ -->
+  <div id="state-idle" class="state active">
+    <div class="header">
+      <div class="logo-mark">
+        <span class="material-symbols-outlined logo-icon" style="font-variation-settings: 'FILL' 1">play_circle</span>
+      </div>
+      <div>
+        <h1>Ketchup Capture</h1>
+        <p class="subtitle">Manual Flow Recorder</p>
+      </div>
+    </div>
+    <p class="desc">Record DOM mutations and interactions on this page. The captured data will be sent to your Ketchup Captures Registry for AI asset generation.</p>
+    <button id="btn-start" class="btn-primary">
+      <span class="material-symbols-outlined btn-icon" style="font-variation-settings: 'FILL' 1">fiber_manual_record</span>
+      Start Capture
+    </button>
+    <div class="info-bar">
+      <span class="material-symbols-outlined info-icon" style="font-variation-settings: 'FILL' 1">info</span>
+      <span>Navigate the flow you want to capture after clicking Start.</span>
+    </div>
+  </div>
+
+  <!-- ═══ State: RECORDING ═══ -->
+  <div id="state-recording" class="state">
+    <div class="header">
+      <div class="logo-mark recording-pulse">
+        <span class="material-symbols-outlined logo-icon recording-icon" style="font-variation-settings: 'FILL' 1">fiber_manual_record</span>
+      </div>
+      <div>
+        <h1>Recording…</h1>
+        <p class="subtitle" id="timer">00:00</p>
+      </div>
+    </div>
+    <div class="stats-row">
+      <div class="stat">
+        <span class="stat-label">Events</span>
+        <span class="stat-value" id="event-count">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Page</span>
+        <span class="stat-value stat-url" id="recording-url">—</span>
+      </div>
+    </div>
+    <button id="btn-stop" class="btn-stop">
+      <span class="material-symbols-outlined btn-icon" style="font-variation-settings: 'FILL' 1">stop</span>
+      Stop & Upload
+    </button>
+  </div>
+
+  <!-- ═══ State: UPLOADING ═══ -->
+  <div id="state-uploading" class="state">
+    <div class="header centered">
+      <div class="spinner"></div>
+      <h1>Uploading Capture…</h1>
+      <p class="subtitle">Sending DOM snapshot to Ketchup</p>
+    </div>
+  </div>
+
+  <!-- ═══ State: DONE ═══ -->
+  <div id="state-done" class="state">
+    <div class="header centered">
+      <div class="logo-mark done-mark">
+        <span class="material-symbols-outlined logo-icon" style="font-variation-settings: 'FILL' 1">check_circle</span>
+      </div>
+      <h1>Capture Complete!</h1>
+      <p class="subtitle" id="done-summary">42 events · 12s</p>
+    </div>
+    <a id="btn-view" class="btn-primary" href="#" target="_blank">
+      View in Captures Registry
+    </a>
+    <button id="btn-new" class="btn-secondary">
+      New Capture
+    </button>
+  </div>
+
+  <!-- ═══ State: ERROR ═══ -->
+  <div id="state-error" class="state">
+    <div class="header centered">
+      <div class="logo-mark error-mark">
+        <span class="material-symbols-outlined logo-icon" style="font-variation-settings: 'FILL' 1">error</span>
+      </div>
+      <h1>Capture Failed</h1>
+      <p class="subtitle error-msg" id="error-message">Unknown error</p>
+    </div>
+    <button id="btn-retry" class="btn-secondary">
+      Try Again
+    </button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

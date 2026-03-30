@@ -1,0 +1,278 @@
+/* ═══════════════════════════════════════════════
+   Ketchup Capture — Popup Stylesheet
+   Dark theme matching the Ketchup webapp.
+   ═══════════════════════════════════════════════ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 340px;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  background: #0e0e0e;
+  color: #e5e2e1;
+  letter-spacing: -0.022em;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── State Management ─── */
+.state {
+  display: none;
+  padding: 24px;
+  flex-direction: column;
+  gap: 16px;
+}
+.state.active {
+  display: flex;
+}
+
+/* ─── Header ─── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.header.centered {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 12px 0;
+}
+
+h1 {
+  font-size: 15px;
+  font-weight: 800;
+  color: #e5e2e1;
+  letter-spacing: -0.03em;
+}
+
+.subtitle {
+  font-size: 11px;
+  font-weight: 700;
+  color: #c4c5d9;
+  opacity: 0.5;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* ─── Logo Mark ─── */
+.logo-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(184, 195, 255, 0.1);
+  border: 1px solid rgba(184, 195, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.logo-icon {
+  font-size: 22px;
+  color: #b8c3ff;
+}
+
+.recording-pulse {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
+  animation: pulse-bg 1.5s ease-in-out infinite;
+}
+.recording-icon {
+  color: #ef4444 !important;
+  animation: pulse-icon 1.5s ease-in-out infinite;
+}
+
+.done-mark {
+  background: rgba(74, 222, 128, 0.1);
+  border-color: rgba(74, 222, 128, 0.2);
+}
+.done-mark .logo-icon {
+  color: #4ade80;
+}
+
+.error-mark {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+.error-mark .logo-icon {
+  color: #ef4444;
+}
+
+/* ─── Description ─── */
+.desc {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #c4c5d9;
+  opacity: 0.7;
+}
+
+/* ─── Buttons ─── */
+.btn-primary {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  background: #b8c3ff;
+  color: #002388;
+  font-size: 13px;
+  font-weight: 800;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+  text-decoration: none;
+  box-shadow: 0 0 20px rgba(184, 195, 255, 0.15);
+}
+.btn-primary:hover {
+  opacity: 0.9;
+  transform: scale(0.98);
+}
+.btn-primary:active {
+  transform: scale(0.95);
+}
+
+.btn-stop {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  font-size: 13px;
+  font-weight: 800;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+.btn-stop:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+.btn-stop:active {
+  transform: scale(0.95);
+}
+
+.btn-secondary {
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: #1c1b1b;
+  color: #e5e2e1;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-secondary:hover {
+  background: #252424;
+}
+.btn-secondary:active {
+  transform: scale(0.95);
+}
+
+.btn-icon {
+  font-size: 18px;
+}
+
+/* ─── Info Bar ─── */
+.info-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(184, 195, 255, 0.05);
+  border: 1px solid rgba(184, 195, 255, 0.1);
+  font-size: 11px;
+  color: #c4c5d9;
+  line-height: 1.5;
+}
+.info-icon {
+  font-size: 14px;
+  color: #b8c3ff;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* ─── Stats Row ─── */
+.stats-row {
+  display: flex;
+  gap: 12px;
+}
+.stat {
+  flex: 1;
+  background: #131313;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stat-label {
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: #c4c5d9;
+  opacity: 0.4;
+}
+.stat-value {
+  font-size: 18px;
+  font-weight: 900;
+  color: #dcb8ff;
+  font-variant-numeric: tabular-nums;
+}
+.stat-url {
+  font-size: 11px;
+  font-weight: 600;
+  color: #b8c3ff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ─── Spinner ─── */
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(184, 195, 255, 0.1);
+  border-top-color: #b8c3ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 4px;
+}
+
+/* ─── Error ─── */
+.error-msg {
+  color: #fca5a5 !important;
+  opacity: 1 !important;
+  font-size: 12px !important;
+  text-transform: none !important;
+  letter-spacing: -0.01em !important;
+}
+
+/* ─── Animations ─── */
+@keyframes pulse-bg {
+  0%, 100% { background: rgba(239, 68, 68, 0.1); }
+  50% { background: rgba(239, 68, 68, 0.25); }
+}
+@keyframes pulse-icon {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
