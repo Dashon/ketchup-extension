@@ -6,7 +6,8 @@
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "tabs"
   ],
   "action": {
     "default_popup": "popup/popup.html",
@@ -28,7 +29,9 @@
     {
       "matches": [
         "http://localhost:3000/*",
-        "https://ketchup-webapp.vercel.app/*"
+        "http://localhost:3003/*",
+        "https://ketchup-webapp.vercel.app/*",
+        "https://app.gitketchup.com/*"
       ],
       "js": ["src/auth-bridge.js"],
       "run_at": "document_idle"

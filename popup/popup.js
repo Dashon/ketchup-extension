@@ -9,8 +9,8 @@
 
 // ─── Configuration ───
 const API_BASE = {
-  local: "http://localhost:3000",
-  production: "https://ketchup-webapp.vercel.app",
+  local: "http://localhost:3003",
+  production: "https://app.gitketchup.com",
 };
 const CAPTURES_ENDPOINT = "/api/captures";
 
@@ -56,7 +56,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     btnStart.disabled = true;
     btnStart.style.opacity = "0.3";
     btnStart.title = "Please click 'Start Manual Capture' in your Ketchup Workspace to sync credentials.";
-    showError("Workspace not connected. Go to your Ketchup Dashboard, open a Project, and click 'Start Manual Capture' to link this extension.");
+    showError("Workspace not connected. Open your Ketchup project, click 'New Capture' → 'Start manual session' to link this extension.");
     return;
   }
 
@@ -177,6 +177,15 @@ async function handleEventsReady(events, metadata) {
     const data = await res.json();
     console.log("[Ketchup Capture] ✅ Upload success:", data);
 
+    // Relay captureId back to web app via content scripts
+    // This triggers KETCHUP_RECORDING_COMPLETE in the auth-bridge
+    const captureId = data.captureId || null;
+    chrome.runtime.sendMessage({
+      type: "UPLOAD_COMPLETE",
+      captureId: String(captureId),
+      durationMs: metadata.duration || 0,
+    });
+
     // Link directly to the capture in the registry
     btnView.href = `${baseUrl}/catchup/${currentAuth.projectId}/captures`;
 
@@ -185,6 +194,11 @@ async function handleEventsReady(events, metadata) {
     doneSummaryEl.textContent = `${events.length} events · ${durationSec}s`;
     showState("done");
   } catch (err) {
+    // Relay error to web app via content scripts
+    chrome.runtime.sendMessage({
+      type: "UPLOAD_ERROR",
+      error: err.message,
+    });
     showError(err.message);
   }
 }

@@ -1,49 +1,133 @@
 /**
- * Ketchup Capture — Auth Bridge
- *
- * This script is automatically injected ONLY into the Ketchup Webapp domain
- * (e.g. localhost:3000, ketchup-webapp.vercel.app).
- *
- * It acts as the "Magic Bridge", listening for a specific window.postMessage
- * emitted by the Webapp when the user clicks 'Start Manual Capture'.
- *
- * When received, it instantly saves the user's active Project ID and Supabase
- * Auth Token into chrome.storage so the extension can securely upload
- * captures later without requiring a manual login.
+ * Ketchup Capture — Extension Content Script (Web App Bridge)
+ * 
+ * Automatically injected into the Ketchup Webapp domain.
+ * Implements the EXTENSION_PROTOCOL to communicate with the web app UI.
  */
 
+// 1. Inject DOM Marker for immediate detection
+const meta = document.createElement("meta");
+meta.name = "ketchup-extension";
+meta.content = "installed";
+meta.dataset.version = chrome.runtime.getManifest().version;
+document.head.appendChild(meta);
+
+// 2. Allowed origins
+const ALLOWED_ORIGINS = [
+  "http://localhost:3000",
+  "http://localhost:3003",
+  "https://ketchup-webapp.vercel.app",
+  "https://app.gitketchup.com"
+];
+
+// 3. Message Listener
 window.addEventListener("message", (event) => {
-  // 1. Verify Origin (Security)
-  const allowedOrigins = [
-    "http://localhost:3000",
-    "https://ketchup-webapp.vercel.app"
-  ];
-  if (!allowedOrigins.includes(event.origin)) return;
+  if (!ALLOWED_ORIGINS.includes(event.origin)) return;
+  if (!event.data || !event.data.type) return;
 
-  // 2. Verify Payload Signature
   const { type, payload } = event.data;
-  if (type !== "KETCHUP_AUTH_SYNC" || !payload) return;
 
-  const { projectId, token, environment } = payload;
-  if (!projectId || !token) {
-    console.error("[Ketchup Extension] Auth Sync failed: Missing projectId or token");
+  // ----------------------------------------------------------------
+  // PING / PONG (Fallback Detection)
+  // ----------------------------------------------------------------
+  if (type === "KETCHUP_PING") {
+    window.postMessage({
+      type: "KETCHUP_PONG",
+      payload: {
+        version: chrome.runtime.getManifest().version,
+        capabilities: ["rrweb"]
+      }
+    }, event.origin);
     return;
   }
 
-  // 3. Save to Extension Storage
-  chrome.storage.local.set({
-    ketchupAuth: {
-      projectId,
-      token,
-      environment: environment || "production",
-      syncedAt: Date.now()
-    }
-  }, () => {
-    console.log(`[Ketchup Extension] 🔑 Magic Auth Sync successful for Project: ${projectId}`);
+  // ----------------------------------------------------------------
+  // AUTH SYNC
+  // ----------------------------------------------------------------
+  if (type === "KETCHUP_AUTH_SYNC" && payload) {
+    const { projectId, token, environment } = payload;
     
-    // Optional: Alert the webapp that the sync was successful
-    window.postMessage({ type: "KETCHUP_AUTH_SYNC_SUCCESS" }, event.origin);
-  });
+    if (!projectId || !token) {
+      window.postMessage({
+        type: "KETCHUP_AUTH_ACK",
+        payload: { success: false, error: "Missing projectId or token" }
+      }, event.origin);
+      return;
+    }
+
+    // Save to extension storage
+    chrome.storage.local.set({
+      ketchupAuth: {
+        projectId,
+        token,
+        environment: environment || "production",
+        syncedAt: Date.now()
+      }
+    }, () => {
+      console.log(`[Ketchup Extension] 🔑 Magic Auth Sync successful for Project: ${projectId}`);
+      window.postMessage({
+        type: "KETCHUP_AUTH_ACK",
+        payload: { success: true }
+      }, event.origin);
+    });
+    return;
+  }
+
+  // ----------------------------------------------------------------
+  // SESSION CONTROLS
+  // ----------------------------------------------------------------
+  if (type === "KETCHUP_STOP_RECORDING") {
+    // Relay to background script
+    chrome.runtime.sendMessage({ type: "STOP_RECORDING" });
+    return;
+  }
+
+  if (type === "KETCHUP_CANCEL_RECORDING") {
+    // Relay cancel to background script (if background script supports it)
+    chrome.runtime.sendMessage({ type: "CANCEL_RECORDING" });
+    
+    // Also notify the web app immediately
+    window.postMessage({
+      type: "KETCHUP_RECORDING_ERROR",
+      payload: { error: "Cancelled by user", code: "cancelled" }
+    }, event.origin);
+    return;
+  }
 });
 
-console.log("[Ketchup Extension] 🌉 Auth Bridge active. Listening for credentials...");
+// 4. Listen for Background Script events to relay to Web App
+chrome.runtime.onMessage.addListener((message) => {
+  // Translate background events to web app events
+  if (message.type === "RECORDING_STATUS") {
+    window.postMessage({
+      type: "KETCHUP_RECORDING_STATUS",
+      payload: { 
+        recording: message.isRecording,
+        durationMs: message.durationMs || 0
+      }
+    }, window.location.origin);
+  }
+  
+  if (message.type === "UPLOAD_COMPLETE") {
+    window.postMessage({
+      type: "KETCHUP_RECORDING_COMPLETE",
+      payload: {
+        captureId: message.captureId,
+        type: "rrweb",
+        durationMs: message.durationMs || 0
+      }
+    }, window.location.origin);
+  }
+  
+  if (message.type === "UPLOAD_ERROR") {
+    window.postMessage({
+      type: "KETCHUP_RECORDING_ERROR",
+      payload: {
+        error: message.error || "Upload failed",
+        code: "upload_failed"
+      }
+    }, window.location.origin);
+  }
+});
+
+console.log("[Ketchup Extension] 🌉 Bridge active (v" + chrome.runtime.getManifest().version + ")");

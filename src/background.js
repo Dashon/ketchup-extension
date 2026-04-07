@@ -4,6 +4,9 @@
  * Orchestrates multi-tab session recording.
  * Maintains the master `masterEvents` array and auto-injects the content script
  * into new pages whenever a recording session is active.
+ *
+ * Broadcasts RECORDING_STATUS to all Ketchup web app tabs so the
+ * useManualSession hook can show live recording state.
  */
 
 // Master Session State
@@ -14,6 +17,9 @@ let masterSession = {
   events: [],       // The combined rrweb stream
   activeTabs: new Set(),
 };
+
+// Status broadcast interval handle
+let statusBroadcastInterval = null;
 
 // ─── Message Handling ───
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -43,6 +49,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case "STOP_RECORDING":
       handleStopRecording().then(sendResponse);
+      return true; // async
+
+    case "CANCEL_RECORDING":
+      handleCancelRecording().then(sendResponse);
       return true; // async
 
     case "STREAM_EVENTS_CHUNK":
@@ -109,6 +119,9 @@ async function handleStartRecording(tabId) {
     await chrome.action.setBadgeText({ text: "REC" });
     await chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
 
+    // Start broadcasting recording status to all Ketchup web app tabs
+    startStatusBroadcast();
+
     return { ok: true };
   } catch (err) {
     console.error("[Ketchup Background] Failed to start:", err);
@@ -123,6 +136,9 @@ async function handleStopRecording() {
       return { ok: false, error: "No active recording" };
     }
 
+    // Stop broadcasting status
+    stopStatusBroadcast();
+
     // Tell all currently active tabs to stop buffering immediately
     masterSession.activeTabs.forEach((tabId) => {
       chrome.tabs.sendMessage(tabId, { type: "STOP" }).catch(() => {});
@@ -136,7 +152,15 @@ async function handleStopRecording() {
       duration: Date.now() - masterSession.startTime,
     };
 
+    // Broadcast final "recording stopped" status to web app tabs
+    broadcastToWebAppTabs({
+      type: "RECORDING_STATUS",
+      isRecording: false,
+      durationMs: finalPayload.duration,
+    });
+
     // Clean up
+    const startUrl = masterSession.startUrl;
     masterSession.isRecording = false;
     masterSession.activeTabs.clear();
     await chrome.action.setBadgeText({ text: "" });
@@ -145,12 +169,99 @@ async function handleStopRecording() {
     chrome.runtime.sendMessage({
       type: "EVENTS_READY",
       events: finalPayload.events,
-      metadata: { duration: finalPayload.duration, url: masterSession.startUrl || "multi-page-journey" },
+      metadata: { duration: finalPayload.duration, url: startUrl || "multi-page-journey" },
     });
 
     return { ok: true };
   } catch (err) {
     masterSession.isRecording = false;
+    stopStatusBroadcast();
     return { ok: false, error: err.message };
+  }
+}
+
+async function handleCancelRecording() {
+  try {
+    if (!masterSession.isRecording) {
+      return { ok: false, error: "No active recording" };
+    }
+
+    // Stop broadcasting
+    stopStatusBroadcast();
+
+    // Tell all tabs to stop
+    masterSession.activeTabs.forEach((tabId) => {
+      chrome.tabs.sendMessage(tabId, { type: "STOP" }).catch(() => {});
+    });
+
+    // Discard all events — do NOT upload
+    console.log(`[Ketchup Background] Recording cancelled. ${masterSession.events.length} events discarded.`);
+
+    masterSession.isRecording = false;
+    masterSession.events = [];
+    masterSession.activeTabs.clear();
+    await chrome.action.setBadgeText({ text: "" });
+
+    return { ok: true };
+  } catch (err) {
+    masterSession.isRecording = false;
+    stopStatusBroadcast();
+    return { ok: false, error: err.message };
+  }
+}
+
+// ─── Status Broadcasting ───
+// Periodically tells the Ketchup web app tabs that recording is in progress
+// so the useManualSession hook can show a live timer.
+
+function startStatusBroadcast() {
+  stopStatusBroadcast(); // clear any existing
+
+  statusBroadcastInterval = setInterval(() => {
+    if (!masterSession.isRecording) {
+      stopStatusBroadcast();
+      return;
+    }
+
+    const durationMs = Date.now() - masterSession.startTime;
+    broadcastToWebAppTabs({
+      type: "RECORDING_STATUS",
+      isRecording: true,
+      durationMs,
+    });
+  }, 1000);
+}
+
+function stopStatusBroadcast() {
+  if (statusBroadcastInterval) {
+    clearInterval(statusBroadcastInterval);
+    statusBroadcastInterval = null;
+  }
+}
+
+/**
+ * Send a message to content scripts running on Ketchup web app tabs.
+ * These content scripts (auth-bridge.js) relay the message to
+ * the web app via window.postMessage.
+ */
+async function broadcastToWebAppTabs(message) {
+  const KETCHUP_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3003",
+    "https://ketchup-webapp.vercel.app",
+    "https://app.gitketchup.com",
+  ];
+
+  try {
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      if (tab.url && KETCHUP_ORIGINS.some(origin => tab.url.startsWith(origin))) {
+        chrome.tabs.sendMessage(tab.id, message).catch(() => {
+          // Tab may not have the content script loaded — that's fine
+        });
+      }
+    }
+  } catch (e) {
+    // Silently fail — non-critical
   }
 }
