@@ -50,7 +50,15 @@ function startRecording() {
     },
     checkoutEveryNms: 10000,       // Full DOM snapshot every 10s
     blockClass: "ketchup-ignore",
-    maskAllInputs: false,
+    // Mask ALL typed input by default so passwords, card numbers, and any other
+    // sensitive field the user types on any site during a session are never
+    // recorded or uploaded. Password fields are always masked explicitly.
+    maskAllInputs: true,
+    maskInputOptions: {
+      password: true,
+      email: true,
+      tel: true,
+    },
     recordCanvas: true,
     recordCrossOriginIframes: false,
     sampling: {
